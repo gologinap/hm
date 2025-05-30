@@ -3,14 +3,87 @@
 <head>
   <meta charset="UTF-8" />
   <title>Clipboard Copy App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; }
-    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
-    button { padding: 10px 20px; margin-top: 10px; }
-    .status { margin-top: 10px; font-weight: bold; }
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      padding: 16px;
+    }
+
+    h2 {
+      text-align: center;
+      font-size: 1.5rem;
+      margin-bottom: 16px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 150px;
+      padding: 12px;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background-color: #1e1e1e;
+      color: #ffffff;
+      resize: vertical;
+      margin-bottom: 12px;
+    }
+
+    button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: bold;
+      background-color: #0a84ff;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #006fd6;
+    }
+
+    .status {
+      margin-top: 16px;
+      font-size: 1.1rem;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .info {
+      margin: 8px 0;
+      font-size: 0.95rem;
+      color: #bbbbbb;
+    }
+
+    @media (max-width: 600px) {
+      h2 {
+        font-size: 1.25rem;
+      }
+
+      textarea {
+        font-size: 0.95rem;
+      }
+
+      button {
+        font-size: 1rem;
+        padding: 12px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -23,7 +96,7 @@
       const [rawData, setRawData] = useState("");
       const [lines, setLines] = useState([]);
       const [currentIndex, setCurrentIndex] = useState(0);
-      const [status, setStatus] = useState("Chưa có hành động");
+      const [status, setStatus] = useState("🕓 Chưa có hành động");
 
       const parseData = (text) => {
         const parsed = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -33,7 +106,7 @@
 
       const handleCopy = async () => {
         if (currentIndex >= lines.length) {
-          setStatus("Hết danh sách");
+          setStatus("✅ Đã xử lý hết danh sách");
           return;
         }
 
@@ -41,7 +114,7 @@
 
         try {
           await navigator.clipboard.writeText(email);
-          setStatus("Đang đợi code...");
+          setStatus("⏳ Đang lấy mã...");
 
           const res = await fetch("/api/get-code", {
             method: "POST",
@@ -64,17 +137,18 @@
 
       return (
         <div>
-          <h2>Clipboard & Code Fetch App</h2>
+          <h2>📋 Clipboard & Lấy Mã Tự Động</h2>
           <textarea
-            placeholder="Paste danh sách data vào đây..."
+            placeholder="Dán danh sách: email|pass|token|client_id mỗi dòng"
             value={rawData}
             onChange={(e) => {
               setRawData(e.target.value);
               parseData(e.target.value);
             }}
           />
-          <div>📄 Dòng đã paste: {lines.length}</div>
-          <button onClick={handleCopy}>📋 Copy & Lấy mã</button>
+          <div className="info">📄 Tổng dòng: {lines.length}</div>
+          <div className="info">▶️ Đang xử lý dòng: {currentIndex + 1}</div>
+          <button onClick={handleCopy}>📤 Copy email & Gửi yêu cầu mã</button>
           <div className="status">{status}</div>
         </div>
       );
