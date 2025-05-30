@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clipboard Copy App</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+    button { padding: 10px 20px; margin-top: 10px; }
+    .status { margin-top: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    function App() {
+      const [rawData, setRawData] = useState("");
+      const [lines, setLines] = useState([]);
+      const [currentIndex, setCurrentIndex] = useState(0);
+      const [status, setStatus] = useState("Chưa có hành động");
+
+      const parseData = (text) => {
+        const parsed = text.split('\n').map(l => l.trim()).filter(Boolean);
+        setLines(parsed);
+        setCurrentIndex(0);
+      };
+
+      const handleCopy = async () => {
+        if (currentIndex >= lines.length) {
+          setStatus("Hết danh sách");
+          return;
+        }
+
+        const [email, pass, token, client_id] = lines[currentIndex].split('|');
+
+        try {
+          await navigator.clipboard.writeText(email);
+          setStatus("Đang đợi code...");
+
+          const res = await fetch("/api/get-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, token, client_id })
+          });
+
+          const data = await res.json();
+          if (data.code) {
+            setStatus(`✅ Mã: ${data.code}`);
+          } else {
+            setStatus("❌ Không nhận được mã");
+          }
+        } catch (err) {
+          setStatus("❌ Lỗi: " + err.message);
+        }
+
+        setCurrentIndex(currentIndex + 1);
+      };
+
+      return (
+        <div>
+          <h2>Clipboard & Code Fetch App</h2>
+          <textarea
+            placeholder="Paste danh sách data vào đây..."
+            value={rawData}
+            onChange={(e) => {
+              setRawData(e.target.value);
+              parseData(e.target.value);
+            }}
+          />
+          <div>📄 Dòng đã paste: {lines.length}</div>
+          <button onClick={handleCopy}>📋 Copy & Lấy mã</button>
+          <div className="status">{status}</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
