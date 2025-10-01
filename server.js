@@ -20,7 +20,7 @@ app.post("/api/get-code", async (req, res) => {
       email,
       refresh_token: token,
       client_id,
-      type: "tiktok "
+      type: "all"
     });
     res.json({ code: response.data.code || "OK" });
   } catch (err) {
