@@ -1,4 +1,4 @@
-// app.js - Phiên bản tái cấu trúc, an toàn và dễ bảo trì hơn
+// app.js - Phiên bản tái cấu trúc, an toàn và đầy đủ tính năng
 
 const express = require("express");
 const axios = require("axios");
@@ -7,7 +7,6 @@ const mongoose =require("mongoose");
 // ==================== CẤU HÌNH VÀ KHỞI TẠO ====================
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Lấy chuỗi kết nối từ biến môi trường để bảo mật
 const DB_URL = process.env.DB_URL || "mongodb+srv://bulshim889_db_user:47v8XuDHPQdewoxO@hotmailinbox.mmqwgmw.mongodb.net/hotmailinbox?retryWrites=true&w=majority";
 
 // ==================== KẾT NỐI DATABASE ====================
@@ -15,7 +14,7 @@ mongoose.connect(DB_URL)
   .then(() => console.log("✅ Đã kết nối thành công tới MongoDB Atlas!"))
   .catch(err => {
     console.error("❌ Lỗi kết nối MongoDB:", err.message);
-    process.exit(1); // Thoát ứng dụng nếu không kết nối được DB
+    process.exit(1);
   });
 
 // ==================== ĐỊNH NGHĨA MODELS ====================
@@ -24,7 +23,8 @@ const emailAccountSchema = new mongoose.Schema({
   password: { type: String },
   refreshToken: { type: String, required: true },
   clientId: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  used: { type: Boolean, default: false, index: true } // Thêm lại trường trạng thái
 });
 const EmailAccount = mongoose.model('EmailAccount', emailAccountSchema);
 
@@ -34,11 +34,6 @@ app.use(express.urlencoded({ extended: true }));
 
 // ==================== HÀM LOGIC (SERVICES) ====================
 
-/**
- * Hàm logic để lấy tin nhắn và bóc tách code từ một tài khoản
- * @param {object} account - Đối tượng tài khoản lấy từ DB
- * @returns {string|null} - Trả về code hoặc null nếu không tìm thấy
- */
 async function fetchAndExtractCode(account) {
   const response = await axios.post(
     "https://tools.dongvanfb.net/api/get_messages_oauth2",
@@ -66,22 +61,18 @@ app.get("/api/get-code-by-email", async (req, res, next) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ error: "Vui lòng cung cấp email." });
     
-    console.log(`🔍 Tìm kiếm thông tin cho email: ${email}`);
     const account = await EmailAccount.findOne({ email: email.toLowerCase() });
-    if (!account) return res.status(404).json({ error: "Không tìm thấy tài khoản trong database." });
+    if (!account) return res.status(404).json({ error: "Không tìm thấy tài khoản." });
 
-    console.log(`👍 Đã tìm thấy tài khoản. Bắt đầu lấy code...`);
     const extractedCode = await fetchAndExtractCode(account);
 
     if (extractedCode) {
-      console.log(`✅ Đã trích xuất code: ${extractedCode} cho email ${email}`);
       res.json({ email: account.email, code: extractedCode });
     } else {
-      console.log(`🤷 Không tìm thấy code cho ${email}`);
-      res.status(404).json({ error: "Lấy được email nhưng không tìm thấy code nào." });
+      res.status(404).json({ error: "Không tìm thấy code." });
     }
   } catch (err) {
-    next(err); // Chuyển lỗi đến Global Error Handler
+    next(err);
   }
 });
 
@@ -96,9 +87,10 @@ app.post("/api/add-account", async (req, res, next) => {
     for (const line of lines) {
       const [email, password, refreshToken, clientId] = line.split('|');
       if (email && refreshToken && clientId) {
+        // Khi thêm hoặc cập nhật, reset trạng thái `used` về false
         await EmailAccount.findOneAndUpdate(
           { email: email.toLowerCase() },
-          { password, refreshToken, clientId },
+          { password, refreshToken, clientId, used: false },
           { upsert: true }
         );
         successCount++;
@@ -110,6 +102,44 @@ app.post("/api/add-account", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+app.get("/api/get-next-email", async (req, res, next) => {
+    try {
+        const account = await EmailAccount.findOneAndUpdate(
+            { used: false }, 
+            { $set: { used: true } }
+        ).sort({ createdAt: 1 });
+
+        if (account) { 
+            res.json({ email: account.email }); 
+        } else { 
+            res.status(404).json({ error: "Đã hết email chưa sử dụng." }); 
+        }
+    } catch (err) { 
+        next(err);
+    }
+});
+
+app.post("/api/reset-all-emails", async (req, res, next) => {
+    try {
+        const result = await EmailAccount.updateMany({}, { $set: { used: false } });
+        const message = `✅ Đã reset thành công ${result.modifiedCount} email.`;
+        res.json({ status: "success", message });
+    } catch (err) { 
+        next(err);
+    }
+});
+
+app.delete("/api/delete-all-emails", async (req, res, next) => {
+    try {
+        console.log("🔥 Yêu cầu xóa TẤT CẢ email...");
+        const result = await EmailAccount.deleteMany({});
+        const message = `✅ Đã xóa thành công ${result.deletedCount} email khỏi database.`;
+        res.json({ status: "success", message });
+    } catch (err) { 
+        next(err);
+    }
 });
 
 // ==================== FRONT-END ROUTE ====================
@@ -125,7 +155,7 @@ app.get("/", (req, res, next) => {
       <title>Quản lý tài khoản Email</title>
       <style>
         body { font-family: sans-serif; background: #121212; color: #fff; padding: 2em; text-align: center; }
-        h1 { color: #4dffc9; }
+        h1, h2 { color: #4dffc9; }
         textarea { width: 90%; max-width: 600px; height: 200px; background: #1e1e1e; color: #fff; border: 1px solid #333; border-radius: 8px; padding: 1em; font-size: 1rem; }
         button { background: #0a84ff; color: #fff; border: none; padding: 1em 2em; border-radius: 8px; font-size: 1rem; cursor: pointer; margin-top: 1em; }
         button:hover { background: #006fd6; }
@@ -133,11 +163,12 @@ app.get("/", (req, res, next) => {
         .api-info { margin-top: 3em; background: #1e1e1e; padding: 1.5em; border-radius: 8px; text-align: left; max-width: 800px; margin-left: auto; margin-right: auto; }
         .api-info h2 { margin-top: 0; text-align: center;}
         .api-info code { background: #333; padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; word-break: break-all; }
+        .api-info hr { border-color: #333; margin: 1em 0; }
       </style>
     </head>
     <body>
       <h1>Thêm tài khoản vào Database</h1>
-      <p>Dán danh sách tài khoản theo định dạng: <strong>email|password|refreshToken|clientId</strong> (mỗi tài khoản một dòng)</p>
+      <p>Dán danh sách tài khoản theo định dạng: <strong>email|password|refreshToken|clientId</strong></p>
       <form action="/api/add-account" method="POST">
         <textarea name="accountData" placeholder="anomispa9141@hotmail.com|Pass123|M.C548_...|9e5f94bc-..."></textarea>
         <br>
@@ -145,10 +176,14 @@ app.get("/", (req, res, next) => {
       </form>
       ${message ? `<div class="message">${message}</div>` : ''}
       <div class="api-info">
-        <h2>Cách dùng API lấy code</h2>
-        <p><strong>Endpoint:</strong> <code>GET /api/get-code-by-email</code></p>
-        <p><strong>Cách gọi mẫu:</strong> <code>/api/get-code-by-email?email=anomispa9141@hotmail.com</code></p>
-        <p><strong>Kết quả trả về:</strong> <code>{ "email": "...", "code": "..." }</code></p>
+        <h2>Cách dùng API</h2>
+        <p><strong>Lấy code của một email:</strong> <code>GET https://code-hotmail-ebay.onrender.com/api/get-code-by-email?email=EMAIL</code></p>
+        <hr>
+        <p><strong>Lấy 1 email chưa sử dụng:</strong> <code>GET https://code-hotmail-ebay.onrender.com/api/get-next-email</code></p>
+        <hr>
+        <p><strong>Reset tất cả email về "chưa sử dụng":</strong> <code>POST https://code-hotmail-ebay.onrender.com/api/reset-all-emails</code></p>
+        <hr>
+        <p style="color: #ff5555;"><strong>Xóa TẤT CẢ email:</strong> <code>DELETE https://code-hotmail-ebay.onrender.com/api/delete-all-emails</code></p>
       </div>
     </body>
     </html>
@@ -161,12 +196,10 @@ app.get("/", (req, res, next) => {
 // ==================== GLOBAL ERROR HANDLER ====================
 app.use((err, req, res, next) => {
   console.error("💥 Đã xảy ra lỗi không xác định:", err.message);
-  console.error(err.stack); // Log stack trace để debug
   if (!res.headersSent) {
     res.status(500).json({ error: "Có lỗi xảy ra phía server." });
   }
 });
-
 
 // ==================== START SERVER ====================
 app.listen(PORT, () => {
