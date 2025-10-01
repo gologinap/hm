@@ -1,4 +1,3 @@
-// app.js
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
@@ -14,7 +13,9 @@ let APP_URL = null;
 app.use(express.json());
 
 // Tạo file email nếu chưa tồn tại
-if (!fs.existsSync(EMAIL_FILE)) fs.writeFileSync(EMAIL_FILE, JSON.stringify([]));
+if (!fs.existsSync(EMAIL_FILE)) {
+  fs.writeFileSync(EMAIL_FILE, JSON.stringify([]));
+}
 
 // -------------------- API --------------------
 
@@ -55,7 +56,17 @@ app.post("/api/save-email", (req, res) => {
     if (!email || !code) return res.status(400).json({ error: "Thiếu email hoặc code" });
 
     const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
-    emails.push({ email, code, createdAt: new Date().toISOString(), used: false });
+    // Kiểm tra xem email đã tồn tại chưa
+    const existingEmailIndex = emails.findIndex(e => e.email === email);
+    if (existingEmailIndex > -1) {
+        // Cập nhật email đã có
+        emails[existingEmailIndex].code = code;
+        emails[existingEmailIndex].createdAt = new Date().toISOString();
+        emails[existingEmailIndex].used = false; // Reset trạng thái used khi lưu lại
+    } else {
+        // Thêm email mới
+        emails.push({ email, code, createdAt: new Date().toISOString(), used: false });
+    }
     fs.writeFileSync(EMAIL_FILE, JSON.stringify(emails, null, 2));
 
     res.json({ status: "saved" });
@@ -64,7 +75,7 @@ app.post("/api/save-email", (req, res) => {
   }
 });
 
-// Lấy email tiếp theo chưa dùng
+// Lấy email tiếp theo chưa dùng (API cũ)
 app.get("/api/next-email", (req, res) => {
   try {
     const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
@@ -79,6 +90,56 @@ app.get("/api/next-email", (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// ==================== API MỚI ====================
+
+// API 1: Lấy 1 email không trùng lặp từ danh sách đã lưu
+app.get("/api/get-unique-email", (req, res) => {
+  try {
+    const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
+    const uniqueEmail = emails.find(e => !e.used);
+
+    if (!uniqueEmail) {
+      return res.status(404).json({ error: "Đã hết email để sử dụng." });
+    }
+
+    // Đánh dấu là đã sử dụng
+    uniqueEmail.used = true;
+    fs.writeFileSync(EMAIL_FILE, JSON.stringify(emails, null, 2));
+
+    res.json({ email: uniqueEmail.email });
+  } catch (err) {
+    console.error("Lỗi get-unique-email:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API 2: Lấy code theo email được cung cấp qua query param
+app.get("/api/code", (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).json({ error: "Vui lòng cung cấp email trong query param. Ví dụ: /api/code?email=test@example.com" });
+    }
+
+    const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
+    // Tìm kiếm không phân biệt hoa thường
+    const emailData = emails.find(e => e.email.toLowerCase() === email.toLowerCase());
+
+    if (!emailData) {
+      return res.status(404).json({ error: "Không tìm thấy email trong danh sách đã lưu." });
+    }
+
+    res.json({ email: emailData.email, code: emailData.code || "N/A" });
+  } catch (err) {
+    console.error("Lỗi /api/code:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================================================
+
 
 // Ping để tránh Render ngủ
 setInterval(async () => {
