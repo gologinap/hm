@@ -2,9 +2,11 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const axios = require("axios");
+const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const EMAIL_FILE = path.join(__dirname, "emails.json");
 
 let APP_URL = null; // Render App URL nếu dùng để tự ping
 
@@ -12,7 +14,10 @@ let APP_URL = null; // Render App URL nếu dùng để tự ping
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// API route
+// Tạo file email nếu chưa có
+if (!fs.existsSync(EMAIL_FILE)) fs.writeFileSync(EMAIL_FILE, JSON.stringify([]));
+
+// API giữ nguyên
 app.post("/api/get-code", async (req, res) => {
   try {
     const { email, token, client_id } = req.body;
@@ -26,6 +31,30 @@ app.post("/api/get-code", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// API thêm email + code vào file
+app.post("/api/save-email", (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error: "Missing email or code" });
+
+  const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
+  emails.push({ email, code, createdAt: new Date().toISOString() });
+  fs.writeFileSync(EMAIL_FILE, JSON.stringify(emails, null, 2));
+
+  res.json({ status: "saved" });
+});
+
+// API lấy code từ email
+app.get("/email", (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: "Missing email query" });
+
+  const emails = JSON.parse(fs.readFileSync(EMAIL_FILE, "utf-8"));
+  const found = emails.reverse().find(e => e.email === email);
+  if (!found) return res.status(404).json({ error: "Email not found" });
+
+  res.json({ code: found.code });
 });
 
 // Ping chính app để tránh Render ngủ
