@@ -22,17 +22,28 @@ if (!fs.existsSync(EMAIL_FILE)) fs.writeFileSync(EMAIL_FILE, JSON.stringify([]))
 app.post("/api/get-code", async (req, res) => {
   try {
     const { email, token, client_id } = req.body;
-    if (!email || !token || !client_id)
-      return res.status(400).json({ error: "Thiếu email/token/client_id" });
 
-    const response = await axios.post("https://tools.dongvanfb.net/api/get_code_oauth2", {
-      email,
-      refresh_token: token,
-      client_id,
-      type: "all"
-    });
+    // Gọi API gốc của bạn
+    const response = await axios.post(
+      "https://tools.dongvanfb.net/api/get_messages_oauth2",
+      {
+        email,
+        refresh_token: token,
+        client_id,
+      }
+    );
 
-    res.json({ code: response.data.code || "OK" });
+    // Lấy code trả về
+    let code = response.data.code || null;
+
+    // Nếu chưa có code, thử parse code từ subject message của email eBay
+    if (!code && response.data.email_message) {
+      // Giả sử email_message chứa subject hoặc html message
+      const match = response.data.email_message.match(/- (\d{5,6}) -/);
+      if (match) code = match[1];
+    }
+
+    res.json({ code: code || "OK" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
